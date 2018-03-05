@@ -52,38 +52,44 @@ import model.EnrichConfig
 
 class PiiEmitSpec extends Specification {
 
-  val (testGoodIn, testGood, testBad, testPii) = ("testGoodIn", "testEnrichedGood", "testEnrichedBad", "testEnrichedUlgyPii")
+  val (testGoodIn, testGood, testBad, testPii) =
+    ("testGoodIn", "testEnrichedGood", "testEnrichedBad", "testEnrichedUlgyPii")
   val kafkaHost = "127.0.0.1:9092"
 
-  trait EmbeddedKafka extends EmbeddedKafkaContext with DefaultKafkaPorts with TryMatchers with TraversableMatchers {
+  trait EmbeddedKafka
+      extends EmbeddedKafkaContext
+      with DefaultKafkaPorts
+      with TryMatchers
+      with TraversableMatchers {
     val kafkaTopics = Set(testGoodIn, testGood, testBad, testPii)
   }
 
   val jinJava = new Jinjava()
   val configValues = Map(
-    "sourceType" -> "kafka",
-    "sinkType" -> "kafka",
-    "streamsInRaw" -> s"$testGoodIn",
-    "outEnriched" -> s"$testGood",
-    "outPii" -> s"$testPii",
-    "outBad" -> s"$testBad",
-    "partitionKeyName" -> "\"\"",
-    "kafkaBrokers" -> s"$kafkaHost",
-    "region" -> "\"\"",
+    "sourceType"                 -> "kafka",
+    "sinkType"                   -> "kafka",
+    "streamsInRaw"               -> s"$testGoodIn",
+    "outEnriched"                -> s"$testGood",
+    "outPii"                     -> s"$testPii",
+    "outBad"                     -> s"$testBad",
+    "partitionKeyName"           -> "\"\"",
+    "kafkaBrokers"               -> s"$kafkaHost",
+    "region"                     -> "\"\"",
     "enrichStreamsOutMaxBackoff" -> "\"\"",
     "enrichStreamsOutMinBackoff" -> "\"\"",
-    "nsqdPort" -> "123",
-    "nsqlookupdPort" -> "234",
-    "bufferTimeThreshold" -> "1",
-    "bufferRecordThreshold" -> "1",
-    "bufferByteThreshold" -> "100000",
-    "enrichAppName" -> "Jim",
+    "nsqdPort"                   -> "123",
+    "nsqlookupdPort"             -> "234",
+    "bufferTimeThreshold"        -> "1",
+    "bufferRecordThreshold"      -> "1",
+    "bufferByteThreshold"        -> "100000",
+    "enrichAppName"              -> "Jim",
     "enrichStreamsOutMaxBackoff" -> "1000",
     "enrichStreamsOutMinBackoff" -> "1000",
-    "appName" -> "jim")
+    "appName"                    -> "jim"
+  )
 
-  val configRes = getClass.getResourceAsStream("/config.hocon.sample")
-  val config = Source.fromInputStream(configRes).getLines.mkString("\n")
+  val configRes      = getClass.getResourceAsStream("/config.hocon.sample")
+  val config         = Source.fromInputStream(configRes).getLines.mkString("\n")
   val configInstance = jinJava.render(config, configValues)
 
   def decode(s: String) = Base64.decodeBase64(s)
@@ -99,12 +105,13 @@ class PiiEmitSpec extends Specification {
       }
       // Input
       val inputGood = List(
-                        decode(PagePingWithContextSpec.raw),
-                        decode(PageViewWithContextSpec.raw),
-                        decode(StructEventSpec.raw),
-                        decode(StructEventWithContextSpec.raw),
-                        decode(TransactionItemSpec.raw),
-                        decode(TransactionSpec.raw))
+        decode(PagePingWithContextSpec.raw),
+        decode(PageViewWithContextSpec.raw),
+        decode(StructEventSpec.raw),
+        decode(StructEventWithContextSpec.raw),
+        decode(TransactionItemSpec.raw),
+        decode(TransactionSpec.raw)
+      )
       val (expectedGood, expectedBad, expectedPii) = (inputGood.size, 0, inputGood.size)
 
       import ExecutionContext.Implicits.global
@@ -121,18 +128,18 @@ class PiiEmitSpec extends Specification {
         val testProducer = new KafkaProducer[String, Array[Byte]](testKafkaPropertiesProducer)
 
         val events = inputGood
-        events.foreach {
-          r => testProducer.send(new ProducerRecord(testGoodIn, "key", r))
+        events.foreach { r =>
+          testProducer.send(new ProducerRecord(testGoodIn, "key", r))
         }
         testProducer.flush
         testProducer.close
       }
       val producerTimeoutSec = 5
-      val inputProduced = Try { Await.result(producer, Duration(s"$producerTimeoutSec sec")) }
+      val inputProduced      = Try { Await.result(producer, Duration(s"$producerTimeoutSec sec")) }
       inputProduced aka "sending input" must beSuccessfulTry
 
-      private def getRecords(cr: ConsumerRecords[String, String]): List[String] = cr.map(_.value).toList
-
+      private def getRecords(cr: ConsumerRecords[String, String]): List[String] =
+        cr.map(_.value).toList
 
       private def getConsumer(topic: String, expectedRecords: Int, timeoutSec: Long) = Future {
         val started = System.currentTimeMillis
@@ -140,7 +147,8 @@ class PiiEmitSpec extends Specification {
           val props = new Properties()
           props.put("bootstrap.servers", kafkaHost)
           props.put("key.deserializer", "org.apache.kafka.common.serialization.StringDeserializer")
-          props.put("value.deserializer", "org.apache.kafka.common.serialization.StringDeserializer")
+          props
+            .put("value.deserializer", "org.apache.kafka.common.serialization.StringDeserializer")
           props.put("group.id", s"consumer-$topic")
           props
         }
@@ -159,37 +167,47 @@ class PiiEmitSpec extends Specification {
       val producedPiiRecords          = getConsumer(testPii, expectedPii, consumerExecutionTimeoutSec)
       val allFutures = for {
         good <- producedGoodRecords
-        bad <- producedBadRecords
-        pii <- producedPiiRecords
+        bad  <- producedBadRecords
+        pii  <- producedPiiRecords
       } yield (good, bad, pii)
       val t = Try {
         Await.result(allFutures, Duration(s"$consumerExecutionTimeoutSec sec"))
       }
 
       // Converts the entire "expected" results from the other tests to a regex string
-      private def spaceJoinResult(expected: List[StringOrRegex]) = expected.flatMap({
-        case JustRegex(r) => Some(r.toString)
-        case JustString(s) if s.nonEmpty => Some(Pattern.quote(s))
-        case _ => None
-      }).mkString("\\s*")
+      private def spaceJoinResult(expected: List[StringOrRegex]) =
+        expected
+          .flatMap({
+            case JustRegex(r)                => Some(r.toString)
+            case JustString(s) if s.nonEmpty => Some(Pattern.quote(s))
+            case _                           => None
+          })
+          .mkString("\\s*")
 
       t must beSuccessfulTry.like {
         case (good: List[String], bad: List[String], pii: List[String]) => {
           (bad aka "bad result list" must have size (expectedBad)) and
             (pii aka "pii result list" must have size (expectedPii)) and
             (good aka "good result list" must have size (expectedGood)) and
-            (good aka "good result list" must containMatch(spaceJoinResult(PagePingWithContextSpec.expected))) and
+            (good aka "good result list" must containMatch(
+              spaceJoinResult(PagePingWithContextSpec.expected))) and
             (pii aka "pii result list" must contain(PagePingWithContextSpec.pii)) and
-            (good aka "good result list" must containMatch(spaceJoinResult(PageViewWithContextSpec.expected))) and
+            (good aka "good result list" must containMatch(
+              spaceJoinResult(PageViewWithContextSpec.expected))) and
             (pii aka "pii result list" must contain(PageViewWithContextSpec.pii)) and
-            (good aka "good result list" must containMatch(spaceJoinResult(StructEventSpec.expected))) and
+            (good aka "good result list" must containMatch(
+              spaceJoinResult(StructEventSpec.expected))) and
             (pii aka "pii result list" must contain(StructEventSpec.pii)) and
-            (good aka "good result list" must containMatch(spaceJoinResult(StructEventWithContextSpec.expected))) and
+            (good aka "good result list" must containMatch(
+              spaceJoinResult(StructEventWithContextSpec.expected))) and
             (pii aka "pii result list" must contain(StructEventWithContextSpec.pii)) and
-            (good aka "good result list" must containMatch(spaceJoinResult(TransactionItemSpec.expected))) and
+            (good aka "good result list" must containMatch(
+              spaceJoinResult(TransactionItemSpec.expected))) and
             (pii aka "pii result list" must contain(TransactionItemSpec.pii)) and
-            (good aka "good result list" must containMatch(spaceJoinResult(TransactionSpec.expected))) and
+            (good aka "good result list" must containMatch(
+              spaceJoinResult(TransactionSpec.expected))) and
             (pii aka "pii result list" must contain(TransactionSpec.pii))
+
         }
       }
     }
