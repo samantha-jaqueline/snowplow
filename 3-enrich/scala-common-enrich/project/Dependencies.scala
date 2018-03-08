@@ -61,6 +61,8 @@ object Dependencies {
     val scalaj           = "2.3.0"
     val gatlingJsonpath  = "0.6.4"
     val scalaUri         = "0.5.0"
+    // Java
+    val aws              = "1.11.290"
     // Scala (test only)
     val specs2           = "2.3.13"
     val scalazSpecs2     = "0.2"
@@ -101,6 +103,8 @@ object Dependencies {
     val scalaWeather     = "com.snowplowanalytics"      %% "scala-weather"             % V.scalaWeather
     val scalaj           = "org.scalaj"                 %% "scalaj-http"               % V.scalaj
     val gatlingJsonpath  = "io.gatling"                 %% "jsonpath"                  % V.gatlingJsonpath
+    // Java
+    val ssm              = "com.amazonaws"              % "aws-java-sdk-ssm"           % V.aws
     // Scala (test only)
     val specs2           = "org.specs2"                 %% "specs2"                    % V.specs2         % "test"
     val scalazSpecs2     = "org.typelevel"              %% "scalaz-specs2"             % V.scalazSpecs2   % "test"

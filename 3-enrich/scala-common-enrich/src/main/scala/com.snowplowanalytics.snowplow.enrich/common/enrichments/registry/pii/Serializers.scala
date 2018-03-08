@@ -18,24 +18,55 @@ package pii
 // Json4s
 import org.json4s.JsonDSL._
 import org.json4s.Extraction.decompose
-import org.json4s.{CustomSerializer, JObject}
+import org.json4s.{CustomSerializer, JObject, MappingException}
 
 // Scalaz
-import scalaz.{Failure, Success}
+import scalaz._
+import Scalaz._
 
 /**
- * Custom serializer for PiiStrategy class
+ * Custom serializer for PiiStrategyPseudonymizeSalt class
  */
-private[pii] final class PiiStrategySerializer
-    extends CustomSerializer[PiiStrategy](formats =>
+private[pii] final class PiiStrategyPseudonymizeSaltSerializer
+    extends CustomSerializer[PiiStrategyPseudonymizeSalt](formats =>
       ({
         case jo: JObject =>
           implicit val json4sFormats = formats
-          val function               = (jo \ "pseudonymize" \ "hashFunction").extract[String]
-          PiiPseudonymizerEnrichment.getHashFunction(function) match {
-            case Success(hf) => PiiStrategyPseudonymize(function, hf)
-            case Failure(msg) =>
-              println(msg); PiiStrategyPseudonymize("IDENTITY", (b: Array[Byte]) => b.mkString) // FIXME: What to do here?
+          val paramName              = (jo \ "ec2ParameterStore" \ "parameterName").extractOpt[String]
+          val saltOpt: Option[PiiStrategyPseudonymizeSalt] = paramName
+            .map(PiiStrategyPseudonymizeSaltAWSParameterStore(_))
+            .orElse(
+              (jo \ "plainValue")
+                .extractOpt[String]
+                .map(PiiStrategyPseudonymizeSaltPlainValue(_)))
+          saltOpt match {
+            case Some(salt) => salt
+            case None       => throw new MappingException(s"Could not extract salt from config")
+          }
+      }, {
+        case s: PiiStrategyPseudonymizeSalt => ""
+      }))
+
+/**
+ * Custom serializer for PiiStrategyPseudonymize class
+ */
+private[pii] final class PiiStrategyPseudonymizeSerializer
+    extends CustomSerializer[PiiStrategyPseudonymize](formats =>
+      ({
+        case jo: JObject =>
+          implicit val json4sFormats = formats
+          val function = (jo \ "pseudonymize" \ "hashFunction")
+            .extractOpt[String]
+            .toSuccess("Could not get hashFunction from config")
+          val salt = (jo \ "pseudonymize" \ "salt")
+            .extractOpt[PiiStrategyPseudonymizeSalt]
+            .toSuccess("Could not get salt from config")
+          val hashFn = function.flatMap(fn => PiiPseudonymizerEnrichment.getHashFunction(fn))
+          (function |@| salt |@| hashFn) { (functionName, saltObj, functionFn) =>
+            PiiStrategyPseudonymize(functionName, functionFn, saltObj.getSalt)
+          } match {
+            case Success(psp) => psp
+            case Failure(msg) => throw new MappingException(msg)
           }
       }, {
         case psp: PiiStrategyPseudonymize =>

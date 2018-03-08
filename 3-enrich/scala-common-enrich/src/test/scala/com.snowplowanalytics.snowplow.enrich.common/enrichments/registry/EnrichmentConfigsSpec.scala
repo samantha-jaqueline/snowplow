@@ -319,7 +319,10 @@ class EnrichmentConfigsSpec extends Specification with ValidationMatchers {
           |    ],
           |    "strategy": {
           |      "pseudonymize": {
-          |        "hashFunction": "SHA-256"
+          |        "hashFunction": "SHA-256",
+          |        "salt": {
+          |         "plainValue": "pepper"
+          |        }
           |      }
           |    }
           |  }

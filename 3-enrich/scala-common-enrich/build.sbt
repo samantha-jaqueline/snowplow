@@ -57,6 +57,8 @@ lazy val root = project
       Dependencies.Libraries.scalaWeather,
       Dependencies.Libraries.scalaj,
       Dependencies.Libraries.gatlingJsonpath,
+      // Java
+      Dependencies.Libraries.ssm,
       // Scala (test only)
       Dependencies.Libraries.specs2,
       Dependencies.Libraries.scalazSpecs2,

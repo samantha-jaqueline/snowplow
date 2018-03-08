@@ -29,6 +29,8 @@ import org.json4s.jackson.Serialization.write
 
 // Java
 import org.apache.commons.codec.digest.DigestUtils
+import com.amazonaws.services.simplesystemsmanagement.AWSSimpleSystemsManagementClientBuilder
+import com.amazonaws.services.simplesystemsmanagement.model.GetParameterRequest
 
 // Java libraries
 import com.fasterxml.jackson.databind.JsonNode
@@ -46,7 +48,7 @@ import iglu.client.{SchemaCriterion, SchemaKey}
 
 // This project
 import common.ValidatedNelMessage
-import common.utils.ScalazJson4sUtils
+import common.utils.ScalazJson4sUtils.{extract, fieldExists}
 import common.outputs.EnrichedEvent
 
 /**
@@ -55,7 +57,7 @@ import common.outputs.EnrichedEvent
  */
 object PiiPseudonymizerEnrichment extends ParseableEnrichment {
 
-  implicit val json4sFormats = DefaultFormats
+  implicit val formats = DefaultFormats + new PiiStrategyPseudonymizeSerializer + new PiiStrategyPseudonymizeSaltSerializer
 
   override val supportedSchema =
     SchemaCriterion("com.snowplowanalytics.snowplow.enrichments", "pii_enrichment_config", "jsonschema", 2, 0, 0)
@@ -63,18 +65,12 @@ object PiiPseudonymizerEnrichment extends ParseableEnrichment {
   def parse(config: JValue, schemaKey: SchemaKey): ValidatedNelMessage[PiiPseudonymizerEnrichment] = {
     for {
       conf <- matchesSchema(config, schemaKey)
-      emitIdentificationEvent = ScalazJson4sUtils
-        .extract[Boolean](conf, "emitIdentificationEvent")
-        .toOption
+      emitIdentificationEvent = extract[Boolean](conf, "emitIdentificationEvent").toOption
         .getOrElse(false)
-      piiFields        <- ScalazJson4sUtils.extract[List[JObject]](conf, "parameters", "pii").leftMap(_.getMessage)
-      hashFunctionName <- extractStrategyFunction(config)
-      hashFunction     <- getHashFunction(hashFunctionName)
-      piiFieldList     <- extractFields(piiFields)
-    } yield
-      PiiPseudonymizerEnrichment(piiFieldList,
-                                 emitIdentificationEvent,
-                                 PiiStrategyPseudonymize(hashFunctionName, hashFunction))
+      piiFields    <- extract[List[JObject]](conf, "parameters", "pii").leftMap(_.getMessage)
+      piiStrategy  <- extractStrategy(config)
+      piiFieldList <- extractFields(piiFields)
+    } yield PiiPseudonymizerEnrichment(piiFieldList, emitIdentificationEvent, piiStrategy)
   }.leftMap(_.toProcessingMessageNel)
 
   private[pii] def getHashFunction(strategyFunction: String): Validation[String, DigestFunction] =
@@ -91,9 +87,9 @@ object PiiPseudonymizerEnrichment extends ParseableEnrichment {
   private def extractFields(piiFields: List[JObject]): Validation[String, List[PiiField]] =
     piiFields.map {
       case field: JObject =>
-        if (ScalazJson4sUtils.fieldExists(field, "pojo"))
+        if (fieldExists(field, "pojo"))
           extractString(field, "pojo", "field").flatMap(extractPiiScalarField)
-        else if (ScalazJson4sUtils.fieldExists(field, "json")) extractPiiJsonField(field \ "json")
+        else if (fieldExists(field, "json")) extractPiiJsonField(field \ "json")
         else s"PII Configuration: pii field does not include 'pojo' nor 'json' fields. Got: [${compact(field)}]".failure
       case json => s"PII Configuration: pii field does not contain an object. Got: [${compact(json)}]".failure
     }.sequenceU
@@ -123,11 +119,10 @@ object PiiPseudonymizerEnrichment extends ParseableEnrichment {
       .getOrElse(s"The specified json field $fieldName is not supported".failure)
 
   private def extractString(jValue: JValue, field: String, tail: String*): Validation[String, String] =
-    ScalazJson4sUtils.extract[String](jValue, field, tail: _*).leftMap(_.getMessage)
+    extract[String](jValue, field, tail: _*).leftMap(_.getMessage)
 
-  private def extractStrategyFunction(config: JValue): Validation[String, String] =
-    ScalazJson4sUtils
-      .extract[String](config, "parameters", "strategy", "pseudonymize", "hashFunction")
+  private def extractStrategy(config: JValue): Validation[String, PiiStrategyPseudonymize] =
+    extract[PiiStrategyPseudonymize](config, "parameters", "strategy")
       .leftMap(_.getMessage)
 
   private def matchesSchema(config: JValue, schemaKey: SchemaKey): Validation[String, JValue] =
@@ -139,11 +134,14 @@ object PiiPseudonymizerEnrichment extends ParseableEnrichment {
 
 /**
  * Implements a pseudonymization strategy using any algorithm known to DigestFunction
+ * @param functionName string representation of the function
  * @param hashFunction the DigestFunction to apply
+ * @param salt salt added to the plain string before hashing
  */
-final case class PiiStrategyPseudonymize(functionName: String, hashFunction: DigestFunction) extends PiiStrategy {
+final case class PiiStrategyPseudonymize(functionName: String, hashFunction: DigestFunction, salt: String)
+    extends PiiStrategy {
   val TextEncoding                                 = "UTF-8"
-  override def scramble(clearText: String): String = hash(clearText)
+  override def scramble(clearText: String): String = hash(clearText + salt)
   def hash(text: String): String                   = hashFunction(text.getBytes(TextEncoding))
 }
 
@@ -165,10 +163,16 @@ case class PiiPseudonymizerEnrichment(fieldList: List[PiiField],
                                       emitIdentificationEvent: Boolean,
                                       strategy: PiiStrategy)
     extends Enrichment {
-  implicit val json4sFormats = DefaultFormats + new PiiModifiedFieldsSerializer + new PiiStrategySerializer
+  implicit val json4sFormats = DefaultFormats +
+    new PiiModifiedFieldsSerializer +
+    new PiiStrategyPseudonymizeSaltSerializer +
+    new PiiStrategyPseudonymizeSerializer
+
   def transformer(event: EnrichedEvent): Unit = {
     val modifiedFields: ModifiedFields = fieldList.flatMap(_.transform(event, strategy))
-    event.pii = if (modifiedFields.nonEmpty) write(PiiModifiedFields(modifiedFields, strategy)) else null
+    event.pii =
+      if (emitIdentificationEvent && modifiedFields.nonEmpty) write(PiiModifiedFields(modifiedFields, strategy))
+      else null
   }
 }
 
@@ -284,5 +288,24 @@ private final class ScrambleMapFunction(strategy: PiiStrategy,
         case default: AnyRef => default
       }
     case default: AnyRef => default
+  }
+}
+
+/*
+ * Getting the salt where the value is already known
+ */
+private[pii] case class PiiStrategyPseudonymizeSaltPlainValue(salt: String) extends PiiStrategyPseudonymizeSalt {
+  val getSalt = salt
+}
+/*
+ * Getting the salt where the value is stored in "AWS Systems Manager Parameter Store"
+ */
+private[pii] case class PiiStrategyPseudonymizeSaltAWSParameterStore(parameterName: String)
+    extends PiiStrategyPseudonymizeSalt {
+  lazy val getSalt = {
+    val client                   = AWSSimpleSystemsManagementClientBuilder.defaultClient()
+    val req: GetParameterRequest = new GetParameterRequest().withName(parameterName).withWithDecryption(true)
+    val par                      = client.getParameter(req)
+    par.getParameter.getValue
   }
 }
