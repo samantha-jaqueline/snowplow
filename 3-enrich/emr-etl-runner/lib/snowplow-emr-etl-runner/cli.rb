@@ -260,14 +260,24 @@ module Snowplow
       # Load configuration from JSONs
       Contract Maybe[String] => ArrayOf[JsonFileHash]
       def self.load_targets(targets_path)
+        ids = []
         if targets_path.nil?
           []
         else
           Dir.entries(targets_path).select do |f|
             f.end_with?('.json')
           end.map do |f|
-            {:file => f, :json => JSON.parse(File.read(targets_path + '/' + f), {:symbolize_names => true}) }
+            json = JSON.parse(File.read(targets_path + '/' + f), {:symbolize_names => true}) 
+            id = json.dig(:data, :id)
+            unless id.nil?
+              ids.push(id)
+            end
+            {:file => f, :json => json}
           end
+        end
+        duplicate_ids = ids.select { |id| ids.count(id) > 1 }.uniq
+        unless duplicate_ids.empty?
+          raise ConfigError, "Duplicate storage target ids: #{duplicate_ids}"
         end
       end
 
