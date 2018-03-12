@@ -14,19 +14,20 @@
  */
 package com.snowplowanalytics.snowplow.enrich.spark
 
-import org.specs2.mutable.SpecificationLike
-import org.specs2.specification.Fragments
-import org.specs2.specification.Step
+import org.specs2.mutable.Specification
 
-/**
- * The content of `beforeAll` is executed before a spec and the content of `afterAll` is executed
- * once the spec is done.
- * TODO: To remove once specs2 has been updated.
- */
-trait BeforeAfterAll extends SpecificationLike {
-  override def map(fragments: => Fragments) =
-    Step(beforeAll) ^ fragments ^ Step(afterAll)
-
-  def beforeAll(): Unit
-  def afterAll(): Unit
+/** Pii filtering test which runs using all of the individual good, bad and misc tests */
+class PiiFilteringSpec extends Specification with EnrichJobSpec {
+  import EnrichJobSpec._
+  override def appName = "pii-filter-cf"
+  sequential
+  "A job which processes a CloudFront file" should {
+    "filter out pii events" in {
+      runEnrichJob(Lines(MasterCfSpec.lines: _*), "cloudfront", "1", false, List("geo"))
+      val Some(goods) = readPartFile(dirs.output)
+      val Some(bads) = readPartFile(dirs.badRows)
+      goods must not(contain(matching(".*pii.*")))
+      bads must not(contain(matching(".*pii.*")))
+    }
+  }
 }

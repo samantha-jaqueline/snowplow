@@ -36,7 +36,7 @@ object TransactionCfLineSpec {
     "clj-0.3.0-tom-0.0.2",
     etlVersion,
     null, // No user_id set
-    "x.x.x.x",
+    "34250af8b96709e9a86b40e18e4f9e9d1778d1bb",
     null, // Not set (legacy input line)
     "a279872d76480afb",
     "1",
@@ -82,14 +82,14 @@ object TransactionCfLineSpec {
     null, //
     null, //
     null, // Unstructured event field empty
-    "order-123",     // Transaction fields are set
+    "order-123", // Transaction fields are set
     "psychicbazaar", //
-    "8000",          //
-    "200",           //
-    "50",            //
-    "London",        //
-    "England",       //
-    "UK",            //
+    "8000", //
+    "200", //
+    "50", //
+    "London", //
+    "England", //
+    "UK", //
     null, // Transaction item fields empty
     null, //
     null, //
@@ -130,7 +130,7 @@ object TransactionCfLineSpec {
     "1080",
     null, // Not set (legacy input lines)
     null, //
-    null  //
+    null //
   )
 }
 

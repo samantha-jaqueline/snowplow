@@ -36,7 +36,7 @@ object UnstructEventCfLineSpec {
     "cloudfront",
     etlVersion,
     null, // No user_id set
-    "70.46.123.145",
+    "4426c7c5f72300299dbce3a6d652fdcbc6c651d1",
     "2876815413",
     "9795bd0203804cd1",
     "43",
@@ -50,7 +50,7 @@ object UnstructEventCfLineSpec {
     "Florida",
     null,
     null,
-    "nuvox.net",  // Using the MaxMind domain lookup service
+    "nuvox.net", // Using the MaxMind domain lookup service
     null,
     "http://www.psychicbazaar.com/2-tarot-cards",
     null, // No page title for events

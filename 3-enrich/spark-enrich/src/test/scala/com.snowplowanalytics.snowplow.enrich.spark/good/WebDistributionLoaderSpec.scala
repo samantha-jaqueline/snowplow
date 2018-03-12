@@ -37,7 +37,7 @@ object WebDistributionLoaderSpec {
     "tsv", // "collector version"
     etlVersion,
     null,
-    "255.255.255.255",
+    "d6a4eed80594f0806043581292d64483ebc5d34f",
     null,
     null,
     null,
@@ -144,8 +144,12 @@ class WebDistributionLoaderSpec extends Specification with EnrichJobSpec {
   override def appName = "web-distribution-loader"
   sequential
   "A job which processes a CloudFront web distribution log file" should {
-    runEnrichJob(WebDistributionLoaderSpec.lines, "tsv/com.amazon.aws.cloudfront/wd_access_log",
-      "1", false, List("geo"))
+    runEnrichJob(
+      WebDistributionLoaderSpec.lines,
+      "tsv/com.amazon.aws.cloudfront/wd_access_log",
+      "1",
+      false,
+      List("geo"))
     "correctly output 1 page ping" in {
       val Some(goods) = readPartFile(dirs.output)
       goods.size must_== 1
